@@ -1,0 +1,4 @@
+mcp
+slack-sdk
+python-dotenv
+anthropic
