@@ -4,23 +4,27 @@ Handles communication with Slack MCP server.
 """
 
 import asyncio
+import json
 from typing import Optional, List, Dict, Any
 import os
 from dotenv import load_dotenv
+import httpx
 
 load_dotenv()
 
 
 class SlackMCPClient:
-    def __init__(self, server_url: Optional[str] = None):
-        self.server_url = server_url or os.getenv("MCP_SERVER_URL", "http://localhost:3000")
+    def __init__(self):
+        server_url = os.getenv("MCP_SERVER_URL")
+        self.server_url = f"https://{server_url}" if server_url and not server_url.startswith("http") else server_url
         self.token = os.getenv("SLACK_TOKEN")
         self.session = None
 
     async def connect(self):
         """Initialize connection to MCP server."""
-        # TODO: Initialize MCP transport and connection
-        pass
+        self.session = httpx.AsyncClient(
+            headers={"Authorization": f"Bearer {self.token}"}
+        )
 
     async def list_conversations(self, exclude_archived: bool = True, limit: int = 100) -> List[Dict[str, Any]]:
         """
@@ -33,8 +37,22 @@ class SlackMCPClient:
         Returns:
             List of channel objects with id, name, created, topic, purpose
         """
-        # TODO: Call MCP conversations.list resource
-        return []
+        if not self.session:
+            return []
+
+        try:
+            url = f"{self.server_url}/resources/slack:///conversations"
+            response = await self.session.get(url)
+            response.raise_for_status()
+            data = response.json()
+
+            channels = json.loads(data.get("contents", [{}])[0].get("text", "[]"))
+            if exclude_archived:
+                channels = [ch for ch in channels if not ch.get("is_archived", False)]
+            return channels[:limit]
+        except Exception as e:
+            print(f"Error fetching conversations: {e}")
+            return []
 
     async def get_conversation_history(
         self,
@@ -55,8 +73,20 @@ class SlackMCPClient:
         Returns:
             List of message objects
         """
-        # TODO: Call MCP conversations.history resource
-        return []
+        if not self.session:
+            return []
+
+        try:
+            url = f"{self.server_url}/resources/slack:///conversations/{channel_id}/history"
+            response = await self.session.get(url)
+            response.raise_for_status()
+            data = response.json()
+
+            messages = json.loads(data.get("contents", [{}])[0].get("text", "[]"))
+            return messages[:limit]
+        except Exception as e:
+            print(f"Error fetching conversation history: {e}")
+            return []
 
     async def get_thread_replies(
         self,
@@ -75,8 +105,20 @@ class SlackMCPClient:
         Returns:
             List of reply messages
         """
-        # TODO: Call MCP conversations.replies resource
-        return []
+        if not self.session:
+            return []
+
+        try:
+            url = f"{self.server_url}/resources/slack:///conversations/{channel_id}/threads/{thread_ts}"
+            response = await self.session.get(url)
+            response.raise_for_status()
+            data = response.json()
+
+            messages = json.loads(data.get("contents", [{}])[0].get("text", "[]"))
+            return messages[:limit]
+        except Exception as e:
+            print(f"Error fetching thread replies: {e}")
+            return []
 
     async def search_messages(
         self,
@@ -95,17 +137,44 @@ class SlackMCPClient:
         Returns:
             Search results with matches
         """
-        # TODO: Call MCP search.messages resource if available
-        return {"matches": []}
+        if not self.session:
+            return {"matches": []}
+
+        try:
+            url = f"{self.server_url}/tools/search_messages"
+            payload = {"query": query, "count": count}
+            response = await self.session.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+
+            result = json.loads(data.get("content", [{}])[0].get("text", "{}"))
+            return result
+        except Exception as e:
+            print(f"Error searching messages: {e}")
+            return {"matches": []}
 
     async def get_user_info(self, user_id: str) -> Dict[str, Any]:
         """Get user profile information."""
-        # TODO: Call MCP users.info resource
-        return {}
+        if not self.session:
+            return {}
+
+        try:
+            url = f"{self.server_url}/tools/get_user_info"
+            payload = {"user_id": user_id}
+            response = await self.session.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+
+            user_info = json.loads(data.get("content", [{}])[0].get("text", "{}"))
+            return user_info
+        except Exception as e:
+            print(f"Error fetching user info: {e}")
+            return {}
 
     async def disconnect(self):
         """Clean up connection."""
-        pass
+        if self.session:
+            await self.session.aclose()
 
     async def __aenter__(self):
         await self.connect()
