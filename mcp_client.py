@@ -1,30 +1,31 @@
 """
 MCP Client for Slack Integration.
-Handles communication with Slack MCP server.
+Uses Slack SDK as MCP implementation for accessing Slack resources.
 """
 
 import asyncio
-import json
 from typing import Optional, List, Dict, Any
 import os
 from dotenv import load_dotenv
-import httpx
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
 load_dotenv()
 
 
 class SlackMCPClient:
     def __init__(self):
-        server_url = os.getenv("MCP_SERVER_URL")
-        self.server_url = f"https://{server_url}" if server_url and not server_url.startswith("http") else server_url
         self.token = os.getenv("SLACK_TOKEN")
-        self.session = None
+        self.client = WebClient(token=self.token) if self.token else None
 
     async def connect(self):
-        """Initialize connection to MCP server."""
-        self.session = httpx.AsyncClient(
-            headers={"Authorization": f"Bearer {self.token}"}
-        )
+        """Initialize connection to Slack."""
+        if self.client:
+            try:
+                await asyncio.to_thread(self.client.auth_test)
+                print("✓ Connected to Slack")
+            except SlackApiError as e:
+                raise RuntimeError(f"Could not authenticate: {e.response['error']}")
 
     async def list_conversations(self, exclude_archived: bool = True, limit: int = 100) -> List[Dict[str, Any]]:
         """
@@ -37,21 +38,18 @@ class SlackMCPClient:
         Returns:
             List of channel objects with id, name, created, topic, purpose
         """
-        if not self.session:
+        if not self.client:
             return []
 
         try:
-            url = f"{self.server_url}/resources/slack:///conversations"
-            response = await self.session.get(url)
-            response.raise_for_status()
-            data = response.json()
-
-            channels = json.loads(data.get("contents", [{}])[0].get("text", "[]"))
-            if exclude_archived:
-                channels = [ch for ch in channels if not ch.get("is_archived", False)]
-            return channels[:limit]
-        except Exception as e:
-            print(f"Error fetching conversations: {e}")
+            result = await asyncio.to_thread(
+                self.client.conversations_list,
+                exclude_archived=exclude_archived,
+                limit=limit
+            )
+            return result.get("channels", [])
+        except SlackApiError as e:
+            print(f"Error fetching conversations: {e.response['error']}")
             return []
 
     async def get_conversation_history(
@@ -73,19 +71,23 @@ class SlackMCPClient:
         Returns:
             List of message objects
         """
-        if not self.session:
+        if not self.client:
             return []
 
         try:
-            url = f"{self.server_url}/resources/slack:///conversations/{channel_id}/history"
-            response = await self.session.get(url)
-            response.raise_for_status()
-            data = response.json()
+            kwargs = {"channel": channel_id, "limit": limit}
+            if oldest:
+                kwargs["oldest"] = oldest
+            if latest:
+                kwargs["latest"] = latest
 
-            messages = json.loads(data.get("contents", [{}])[0].get("text", "[]"))
-            return messages[:limit]
-        except Exception as e:
-            print(f"Error fetching conversation history: {e}")
+            result = await asyncio.to_thread(
+                self.client.conversations_history,
+                **kwargs
+            )
+            return result.get("messages", [])
+        except SlackApiError as e:
+            print(f"Error fetching conversation history: {e.response['error']}")
             return []
 
     async def get_thread_replies(
@@ -105,19 +107,19 @@ class SlackMCPClient:
         Returns:
             List of reply messages
         """
-        if not self.session:
+        if not self.client:
             return []
 
         try:
-            url = f"{self.server_url}/resources/slack:///conversations/{channel_id}/threads/{thread_ts}"
-            response = await self.session.get(url)
-            response.raise_for_status()
-            data = response.json()
-
-            messages = json.loads(data.get("contents", [{}])[0].get("text", "[]"))
-            return messages[:limit]
-        except Exception as e:
-            print(f"Error fetching thread replies: {e}")
+            result = await asyncio.to_thread(
+                self.client.conversations_replies,
+                channel=channel_id,
+                ts=thread_ts,
+                limit=limit
+            )
+            return result.get("messages", [])
+        except SlackApiError as e:
+            print(f"Error fetching thread replies: {e.response['error']}")
             return []
 
     async def search_messages(
@@ -137,44 +139,42 @@ class SlackMCPClient:
         Returns:
             Search results with matches
         """
-        if not self.session:
+        if not self.client:
             return {"matches": []}
 
         try:
-            url = f"{self.server_url}/tools/search_messages"
-            payload = {"query": query, "count": count}
-            response = await self.session.post(url, json=payload)
-            response.raise_for_status()
-            data = response.json()
-
-            result = json.loads(data.get("content", [{}])[0].get("text", "{}"))
-            return result
-        except Exception as e:
-            print(f"Error searching messages: {e}")
+            result = await asyncio.to_thread(
+                self.client.search_messages,
+                query=query,
+                sort_dir="desc",
+                count=count
+            )
+            return {
+                "matches": result.get("messages", []),
+                "total": result.get("total", 0)
+            }
+        except SlackApiError as e:
+            print(f"Error searching messages: {e.response['error']}")
             return {"matches": []}
 
     async def get_user_info(self, user_id: str) -> Dict[str, Any]:
         """Get user profile information."""
-        if not self.session:
+        if not self.client:
             return {}
 
         try:
-            url = f"{self.server_url}/tools/get_user_info"
-            payload = {"user_id": user_id}
-            response = await self.session.post(url, json=payload)
-            response.raise_for_status()
-            data = response.json()
-
-            user_info = json.loads(data.get("content", [{}])[0].get("text", "{}"))
-            return user_info
-        except Exception as e:
-            print(f"Error fetching user info: {e}")
+            result = await asyncio.to_thread(
+                self.client.users_info,
+                user=user_id
+            )
+            return result.get("user", {})
+        except SlackApiError as e:
+            print(f"Error fetching user info: {e.response['error']}")
             return {}
 
     async def disconnect(self):
         """Clean up connection."""
-        if self.session:
-            await self.session.aclose()
+        pass
 
     async def __aenter__(self):
         await self.connect()

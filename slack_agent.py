@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
 """
 Slack Memory Agent: Detects forgotten decisions, rejected ideas, and abandoned projects.
-Uses MCP server to connect to Slack and Claude API for intelligent analysis.
+Uses MCP client to connect to Slack and Claude API for intelligent analysis.
 """
 
+import asyncio
 import os
 import json
 from datetime import datetime, timedelta
 from typing import Optional
 from dotenv import load_dotenv
+from mcp_client import SlackMCPClient
 from claude_analyzer import FindingsAnalyzer
 
 load_dotenv()
 
 
 class SlackMemoryAgent:
-    def __init__(self, slack_token: Optional[str] = None, use_claude: bool = True):
-        self.slack_token = slack_token or os.getenv("SLACK_TOKEN")
+    def __init__(self, use_claude: bool = True):
+        self.mcp_client = SlackMCPClient()
         self.workspace_cache = {}
         self.analysis_results = {
             "forgotten_decisions": [],
@@ -27,7 +29,7 @@ class SlackMemoryAgent:
         if use_claude:
             self.analyzer = FindingsAnalyzer()
 
-    def analyze_workspace(self, days_back: int = 30) -> dict:
+    async def analyze_workspace(self, days_back: int = 30) -> dict:
         """
         Analyze Slack workspace for forgotten decisions, rejected ideas, abandoned projects.
 
@@ -37,33 +39,35 @@ class SlackMemoryAgent:
         Returns:
             Dictionary with analysis results
         """
+        await self.mcp_client.connect()
         cutoff_date = datetime.now() - timedelta(days=days_back)
 
-        channels = self.get_channels()
+        channels = await self.get_channels()
 
         for channel in channels:
-            self.analyze_channel(channel, cutoff_date)
+            await self.analyze_channel(channel, cutoff_date)
 
         return self.analysis_results
 
-    def get_channels(self) -> list:
+    async def get_channels(self) -> list:
         """Fetch all channels from workspace via MCP."""
-        # TODO: Implement MCP client call to list_conversations
-        return []
+        return await self.mcp_client.list_conversations(exclude_archived=True, limit=100)
 
-    def analyze_channel(self, channel: dict, cutoff_date: datetime):
+    async def analyze_channel(self, channel: dict, cutoff_date: datetime):
         """Analyze a single channel for signals."""
-        messages = self.fetch_messages(channel["id"], cutoff_date)
+        messages = await self.fetch_messages(channel["id"], cutoff_date)
 
         for message in messages:
             self.detect_forgotten_decision(message, channel)
             self.detect_rejected_idea(message, channel)
             self.detect_abandoned_thread(message, channel)
 
-    def fetch_messages(self, channel_id: str, cutoff_date: datetime) -> list:
+    async def fetch_messages(self, channel_id: str, cutoff_date: datetime) -> list:
         """Fetch messages from a channel via MCP."""
-        # TODO: Implement MCP client call to get_messages
-        return []
+        return await self.mcp_client.get_conversation_history(
+            channel_id=channel_id,
+            limit=100
+        )
 
     def detect_forgotten_decision(self, message: dict, channel: dict):
         """Identify messages about decisions that may have been forgotten."""
@@ -151,25 +155,28 @@ class SlackMemoryAgent:
 
 
 if __name__ == "__main__":
-    # Initialize agent with Claude analysis enabled
-    agent = SlackMemoryAgent(use_claude=True)
+    async def main():
+        # Initialize agent with Claude analysis enabled
+        agent = SlackMemoryAgent(use_claude=True)
 
-    # Analyze workspace for forgotten decisions, rejected ideas, abandoned projects
-    results = agent.analyze_workspace(days_back=30)
-    agent.print_summary()
+        # Analyze workspace for forgotten decisions, rejected ideas, abandoned projects
+        results = await agent.analyze_workspace(days_back=30)
+        agent.print_summary()
 
-    # Analyze findings with Claude (uses prompt caching)
-    claude_analysis = agent.analyze_with_claude()
+        # Analyze findings with Claude (uses prompt caching)
+        claude_analysis = agent.analyze_with_claude()
 
-    if claude_analysis:
-        # Generate formatted report
-        report = agent.analyzer.generate_report(agent.analysis_results)
-        print("\n" + report)
+        if claude_analysis:
+            # Generate formatted report
+            report = agent.analyzer.generate_report(agent.analysis_results)
+            print("\n" + report)
 
-        # Save report to file
-        with open("findings_analysis.md", "w") as f:
-            f.write(report)
-        print("\n✓ Report saved to findings_analysis.md")
+            # Save report to file
+            with open("findings_analysis.md", "w") as f:
+                f.write(report)
+            print("\n✓ Report saved to findings_analysis.md")
 
-    # Export raw findings
-    agent.export_results()
+        # Export raw findings
+        agent.export_results()
+
+    asyncio.run(main())
