@@ -1,0 +1,75 @@
+{
+  "display_information": {
+    "name": "Memory Machine"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "Memory Machine",
+      "always_online": false
+    },
+    "slash_commands": [
+      {
+        "command": "/memory-machine",
+        "description": "Analyze Slack workspace for forgotten decisions, rejected ideas, and abandoned projects",
+        "should_escape": false
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "commands",
+        "chat:write",
+        "channels:read",
+        "groups:read",
+        "users:read"
+      ],
+      "user": [
+        "search:read.public",
+        "search:read.private",
+        "search:read.mpim",
+        "search:read.im",
+        "search:read.files",
+        "search:read.users",
+        "chat:write",
+        "channels:history",
+        "groups:history",
+        "mpim:history",
+        "im:history",
+        "canvases:read",
+        "canvases:write",
+        "users:read",
+        "users:read.email",
+        "reactions:write",
+        "reactions:read",
+        "emoji:read",
+        "files:read",
+        "channels:write",
+        "groups:write",
+        "im:write",
+        "mpim:write",
+        "channels:read",
+        "groups:read",
+        "mpim:read"
+      ],
+      "user_optional": [
+        "search:read.private",
+        "search:read.mpim",
+        "search:read.im",
+        "search:read.files",
+        "chat:write",
+        "groups:history",
+        "mpim:history",
+        "im:history",
+        "canvases:read",
+        "canvases:write"
+      ]
+    }
+  },
+  "settings": {
+    "socket_mode_enabled": true,
+    "org_deploy_enabled": false,
+    "token_rotation_enabled": false,
+    "is_mcp_enabled": true
+  }
+}
