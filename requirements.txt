@@ -2,3 +2,4 @@ mcp
 slack-sdk
 python-dotenv
 anthropic
+slack-cli-hooks<1.0.0

@@ -6,6 +6,8 @@ Listens for slash commands and invokes the agent.
 
 import asyncio
 import os
+import threading
+import time
 from slack_sdk.socket_mode import SocketModeClient
 from slack_sdk.socket_mode.response import SocketModeResponse
 from slack_sdk.web import WebClient
@@ -15,46 +17,28 @@ from slack_agent import SlackMemoryAgent
 load_dotenv()
 
 
-def handle_events(client, req):
-    """Handle incoming Socket Mode events."""
-    if req["type"] == "slash_commands":
-        command = req["payload"]
-        print(f"\n🔍 Slash command received: {command.get('command')}")
-        print(f"   User: {command.get('user_id')}, Channel: {command.get('channel_id')}")
-
-        # Acknowledge the command
-        response = SocketModeResponse(envelope_id=req["envelope_id"])
-        client.send_socket_mode_response(response)
-
-        # Run the agent
-        try:
-            asyncio.run(process_command(command, client))
-        except Exception as e:
-            print(f"❌ Error: {e}")
-
-
-async def process_command(command, client):
-    """Process the slash command and run the agent."""
+def process_command_async(command, slack_token):
+    """Process the slash command asynchronously."""
     channel_id = command.get("channel_id")
-    slack_token = os.getenv("SLACK_TOKEN")
     web_client = WebClient(token=slack_token)
 
-    # Send initial response
-    web_client.chat_postMessage(
-        channel=channel_id,
-        text="🤖 Memory Machine is analyzing your Slack workspace..."
-    )
+    try:
+        # Send initial response
+        web_client.chat_postMessage(
+            channel=channel_id,
+            text="🤖 Memory Machine is analyzing your Slack workspace..."
+        )
 
-    # Run the agent
-    agent = SlackMemoryAgent(use_claude=True)
-    results = await agent.analyze_workspace(days_back=30)
+        # Run the agent
+        agent = SlackMemoryAgent(use_claude=True)
+        results = asyncio.run(agent.analyze_workspace(days_back=30))
 
-    # Prepare summary
-    forgotten = len(results["forgotten_decisions"])
-    rejected = len(results["rejected_ideas"])
-    abandoned = len(results["abandoned_projects"])
+        # Prepare summary
+        forgotten = len(results["forgotten_decisions"])
+        rejected = len(results["rejected_ideas"])
+        abandoned = len(results["abandoned_projects"])
 
-    summary = f"""
+        summary = f"""
 📊 *Memory Machine Analysis Complete*
 
 ✨ *Findings:*
@@ -63,15 +47,47 @@ async def process_command(command, client):
 • Abandoned Projects: {abandoned}
 
 📄 Full report saved to files and Claude analysis generated.
-    """
+        """
 
-    # Send results
-    web_client.chat_postMessage(
-        channel=channel_id,
-        text=summary.strip()
-    )
+        # Send results
+        web_client.chat_postMessage(
+            channel=channel_id,
+            text=summary.strip()
+        )
 
-    print(f"✅ Analysis complete: {forgotten} decisions, {rejected} ideas, {abandoned} projects")
+        print(f"✅ Analysis complete: {forgotten} decisions, {rejected} ideas, {abandoned} projects")
+
+    except Exception as e:
+        print(f"❌ Error processing command: {e}")
+        try:
+            web_client.chat_postMessage(
+                channel=channel_id,
+                text=f"❌ Error analyzing workspace: {str(e)}"
+            )
+        except:
+            pass
+
+
+def handle_events(client, req):
+    """Handle incoming Socket Mode events."""
+    if req["type"] == "slash_commands":
+        command = req["payload"]
+        print(f"\n🔍 Slash command received: {command.get('command')}")
+        print(f"   User: {command.get('user_id')}, Channel: {command.get('channel_id')}")
+
+        # Acknowledge the command immediately (within 3 seconds)
+        response = SocketModeResponse(envelope_id=req["envelope_id"])
+        client.send_socket_mode_response(response)
+        print("✅ Acknowledged slash command")
+
+        # Process in background thread
+        slack_token = os.getenv("SLACK_TOKEN")
+        thread = threading.Thread(
+            target=process_command_async,
+            args=(command, slack_token),
+            daemon=True
+        )
+        thread.start()
 
 
 def start_handler():
@@ -94,9 +110,10 @@ def start_handler():
 
     client.connect()
 
+    # Keep the handler running with proper sleep
     try:
-        while True:
-            pass
+        while client.is_connected():
+            time.sleep(1)
     except KeyboardInterrupt:
         print("\n⏹️  Shutting down...")
         client.close()
