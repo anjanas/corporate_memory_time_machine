@@ -121,7 +121,8 @@ VERBOSE=true
 ├── config.py              # Configuration management
 ├── requirements.txt       # Python dependencies
 ├── .env.example          # Example environment variables
-├── test_caching.py       # Test script to verify prompt caching
+├── tests/                # Test scripts
+│   └── test_caching.py   # Test script to verify prompt caching
 └── README.md             # This file
 ```
 
@@ -138,7 +139,7 @@ VERBOSE=true
 
 **Test it:**
 ```bash
-python test_caching.py
+python tests/test_caching.py
 ```
 
 This script runs analysis twice and shows cache metrics. You'll see `cache_read_input_tokens` increase on the second run as the cached prompt is reused.

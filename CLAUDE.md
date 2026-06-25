@@ -74,7 +74,7 @@ Agent that analyzes Slack workspace to surface forgotten decisions, rejected ide
 
 ## Testing
 
-Run mock tests with `python test_agent.py` to verify detection logic without MCP server.
+Run mock tests with `python tests/test_agent.py` to verify detection logic without MCP server.
 
 ## Environment Setup
 

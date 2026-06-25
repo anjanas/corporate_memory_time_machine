@@ -4,7 +4,12 @@ Example test file with mock data for developing the agent.
 """
 
 import json
+import sys
 from datetime import datetime, timedelta
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from slack_agent import SlackMemoryAgent
 
 
